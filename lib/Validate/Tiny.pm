@@ -36,11 +36,11 @@ Validate::Tiny - Minimalistic data validation
 
 =head1 VERSION
 
-Version 0.04
+Version 0.05
 
 =cut
 
-our $VERSION = '0.04';
+our $VERSION = '0.05';
 
 =head1 SYNOPSIS
 
@@ -222,7 +222,7 @@ Instead of a single filter subroutine, you can pass an array of subroutines
 to provide a chain of filters:
 
     my @filters_array = ( 
-        qr/.+/ = [ sub { lc $_[0] }, sub { ucfirst $_[0] } ] 
+        qr/.+/ => [ sub { lc $_[0] }, sub { ucfirst $_[0] } ] 
     );
 
 The above example will first lowercase the value then uppercase its first 
@@ -643,8 +643,8 @@ minimalist, C<< <minimalist at lavabit.com> >>
 
 =head1 BUGS
 
-Bug reports and patches are welcome.  Reports which include a failing 
-Test::More style test are helpful will receive priority.
+Bug reports and patches are welcome. Reports which include a failing 
+Test::More style test are helpful and will receive priority.
 
 You may also fork the module on Github:
 https://github.com/naturalist/Validate--Tiny
