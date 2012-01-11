@@ -37,11 +37,11 @@ Validate::Tiny - Minimalistic data validation
 
 =head1 VERSION
 
-Version 0.30
+Version 0.31
 
 =cut
 
-our $VERSION = '0.30';
+our $VERSION = '0.31';
 
 =head1 SYNOPSIS
 
@@ -475,6 +475,7 @@ sub _process {
     return $check ? undef : $value;
 }
 
+# From ADAMK's List::MoreUtils
 sub natatime {
     my $n    = shift;
     my @list = @_;
@@ -949,6 +950,10 @@ L<Data::FormValidator>, L<Validation::Class>
 =head1 AUTHOR
 
 minimalist, C<< <minimalist at lavabit.com> >>
+
+=head1 CREDITS
+
+C<natatime> borrowed from Adam Kennedy's L<List::MoreUtils>.
 
 =head1 BUGS
 
