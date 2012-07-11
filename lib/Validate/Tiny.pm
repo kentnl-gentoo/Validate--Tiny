@@ -39,11 +39,11 @@ Validate::Tiny - Minimalistic data validation
 
 =head1 VERSION
 
-Version 0.982
+Version 0.983
 
 =cut
 
-our $VERSION = '0.982';
+our $VERSION = '0.983';
 
 =head1 SYNOPSIS
 
@@ -266,8 +266,19 @@ an even number of elements. Each I<odd> element is a field name match and
 each I<even> element is a reference to a check subroutine or a chain of
 check subroutines.
 
-A check subroutine takes two parameters - the value to be checked and a
-reference to the filtered input hash.
+A check subroutine takes three parameters - the value to be checked, a
+reference to the filtered input hash and a scalar with the name of the
+checked field.
+
+B<Example:>
+
+    checks => [
+        does_exist => sub {
+            my ( $value, $params, $keys ) = @_;
+            return "Key doesn't exist in input data"
+              unless exists( $params->{$key} );
+        }
+    ]
 
 A check subroutine must return undef if the check passes or a string with
 an error message if the check fails.
@@ -426,7 +437,7 @@ sub validate {
     # Add existing, filtered input to $param
     #
     for my $key ( @fields ) {
-        if ( defined $input->{$key} ) {
+        if ( exists $input->{$key} ) {
             $param->{$key} = _process( $rules->{filters}, $input, $key );
         }
     }
@@ -447,15 +458,15 @@ sub validate {
 }
 
 sub _run_code {
-    my ( $code, $value, $param ) = @_;
+    my ( $code, $value, $param, $key ) = @_;
     my $result = $value;
     if ( ref $code eq 'CODE' ) {
-        $result = $code->( $value, $param );
+        $result = $code->( $value, $param, $key );
         $value = $result unless defined $param;
     }
     elsif ( ref $code eq 'ARRAY' ) {
         for (@$code) {
-            $result = _run_code( $_, $value, $param );
+            $result = _run_code( $_, $value, $param, $key );
             if ( defined $param ) {
                 last if $result;
             }
@@ -477,7 +488,7 @@ sub _process {
     my $iterator = natatime(2, @$pairs);
     while ( my ( $match, $code ) = $iterator->() ) {
         if ( _match($key, $match) ) {
-            my $temp = _run_code( $code, $value, $check ? $param : undef );
+            my $temp = _run_code( $code, $value, $check ? ($param, $key) : undef );
             if ( $check ) {
                 return $temp if $temp
             }
@@ -1022,11 +1033,12 @@ https://github.com/naturalist/Validate--Tiny
 
 =head1 AUTHOR
 
-minimalist (cpan: MINIMAL) - minimalist@lavabit.com
+    minimalist (cpan: MINIMAL) - minimalist@lavabit.com
 
 =head1 CONTRIBUTORS
 
-Viktor Tuskyi (cpan: KOORCHIK) - koorchik@cpan.org
+    Viktor Turskyi (cpan: KOORCHIK) - koorchik@cpan.org
+    Ivan Šimoník (cpan: SIMONIKI) - simoniki@cpan.org
 
 =head1 LICENCE
 
