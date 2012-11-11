@@ -2,7 +2,7 @@ NAME
     Validate::Tiny - Minimalistic data validation
 
 VERSION
-    Version 0.983
+    Version 0.984
 
 SYNOPSIS
     Filter and validate user input from forms, etc.
@@ -616,8 +616,14 @@ OBJECT INTERFACE
     Return a result hash, much like using the procedural interface. See the
     output of "validate" for more information.
 
+I18N
+    A check function is considered failing if it returns a value. In the
+    above examples we showed you how to return error strings. If you want to
+    internationalize your errors, you can make your check closures return
+    Locale::Maketext functions, or any other i18n values.
+
 SEE ALSO
-    Data::FormValidator, Validation::Class
+    Data::FormValidator
 
 BUGS
     Bug reports and patches are welcome. Reports which include a failing
@@ -631,7 +637,7 @@ AUTHOR
 
 CONTRIBUTORS
         Viktor Turskyi (cpan: KOORCHIK) - koorchik@cpan.org
-        Ivan ≈ imon√k (cpan: SIMONIKI) - simoniki@cpan.org
+        Ivan Simonik (cpan: SIMONIKI) - simoniki@cpan.org
 
 LICENCE
     This program is free software; you can redistribute it and/or modify it

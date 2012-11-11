@@ -1,28 +1,24 @@
 ---
 abstract: 'Minimalistic data validation'
 author:
-  - 'minimalist <minimalist@lavabit.com>'
+  - 'minimalist <minimal@cpan.org>'
 build_requires:
-  ExtUtils::MakeMaker: 0
+  Test::More: 0
 configure_requires:
-  ExtUtils::MakeMaker: 0
-distribution_type: module
+  ExtUtils::MakeMaker: 6.30
 dynamic_config: 0
-generated_by: 'ExtUtils::MakeMaker version 6.57_05'
+generated_by: 'Dist::Zilla version 4.300023, CPAN::Meta::Converter version 2.120921'
 license: perl
 meta-spec:
   url: http://module-build.sourceforge.net/META-spec-v1.4.html
   version: 1.4
 name: Validate-Tiny
-no_index:
-  directory:
-    - t
-    - inc
 requires:
-  perl: 5.008
-  Test::More: 0
+  Carp: 0
   List::MoreUtils: 0
+  strict: 0
+  warnings: 0
 resources:
-  repository: git://github.com/naturalist/Validate--Tiny.git
-  bugtracker: https://github.com/naturalist/Validate--Tiny/issues
-version: 0.983
+  homepage: https://github.com/naturalist/Validate--Tiny
+  repository: https://github.com/naturalist/Validate--Tiny.git
+version: 0.984
