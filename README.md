@@ -1,329 +1,12 @@
-package Validate::Tiny;
-
-use strict;
-use warnings;
-
-use Carp;
-use Exporter;
-use List::MoreUtils 'natatime';
-
-our @ISA = qw/Exporter/;
-our @EXPORT_OK = qw/
-    validate
-    filter
-    is_required
-    is_required_if
-    is_equal
-    is_long_between
-    is_long_at_least
-    is_long_at_most
-    is_a
-    is_like
-    is_in
-/;
-
-our %EXPORT_TAGS = (
-    'all' => \@EXPORT_OK
-);
-
-our $VERSION = '1.015';
-
-sub validate {
-    my ( $input, $rules ) = @_;
-    my $error = {};
-
-    # Sanity check
-    #
-    die 'You must define a fields array' unless defined $rules->{fields};
-
-    for (qw/filters checks/) {
-        next unless exists $rules->{$_};
-        if ( ref( $rules->{$_} ) ne 'ARRAY' || @{ $rules->{$_} } % 2 ) {
-            die "$_ must be an array with an even number of elements";
-        }
-    }
-
-    for ( keys %$rules ) {
-        /(fields|filters|checks)/ or die "Unknown key $_";
-    }
-
-    my $param = {};
-    my @fields = @{ $rules->{fields} } ? @{ $rules->{fields} } : keys(%$input);
-
-    # Add existing, filtered input to $param
-    #
-    for my $key ( @fields ) {
-        exists $input->{$key} and ($param->{$key} = _process( $rules->{filters}, $input, $key ));
-    }
-
-    # Process all checks for $param
-    #
-    for my $key ( @fields ) {
-        my $err = _process( $rules->{checks}, $param, $key, 1 );
-        $error->{$key} ||= $err if $err;
-    }
-
-    return {
-        success => keys %$error ? 0 : 1,
-        error   => $error,
-        data    => $param
-    };
-
-}
-
-sub _run_code {
-    my ( $code, $value, $param, $key ) = @_;
-    my $result = $value;
-    my $ref = ref $code;
-    if ( $ref eq 'CODE' ) {
-        $result = $code->( $value, $param, $key );
-        $value = $result unless defined $param;
-    }
-    elsif ( $ref eq 'ARRAY' ) {
-        for (@$code) {
-            $result = _run_code( $_, $value, $param, $key );
-            if ( defined $param ) {
-                last if $result;
-            }
-            else {
-                $value = $result;
-            }
-        }
-    }
-    else {
-        die 'Filters and checks must be either sub{} or []';
-    }
-
-    return $result;
-}
-
-sub _process {
-    my ( $pairs, $param, $key, $check ) = @_;
-    my $value = $param->{$key};
-    my $iterator = natatime(2, @$pairs);
-    while ( my ( $match, $code ) = $iterator->() ) {
-        if ( _match($key, $match) ) {
-            my $temp = _run_code( $code, $value, $check ? ($param, $key) : undef );
-            if ( $check ) {
-                return $temp if $temp
-            }
-            else {
-                $value = $temp;
-            }
-        }
-    }
-    return $check ? undef : $value;
-}
-
-sub _match {
-    my ( $a, $b ) = @_;
-    if ( !ref($b) ) {
-        return $a eq $b;
-    }
-    elsif ( ref($b) eq 'ARRAY' ) {
-        return grep { $a eq $_ } @$b;
-    }
-    elsif ( ref($b) eq 'Regexp' ) {
-        return $a =~ $b;
-    }
-    else {
-        return 0;
-    }
-}
-
-sub filter {
-    my $FILTERS = {
-        trim    => sub { $_[0] =~ s/^\s+//; $_[0] =~ s/\s+$//; $_[0]  },
-        strip   => sub { $_[0] =~ s/(\s){2,}/$1/g; $_[0] },
-        lc      => sub { lc $_[0] },
-        uc      => sub { uc $_[0] },
-        ucfirst => sub { ucfirst $_[0] },
-    };
-    my @result = ();
-    for (@_) {
-        if ( exists $FILTERS->{$_} ) {
-            push @result, $FILTERS->{$_};
-        }
-        else {
-            die "Invalid filter: $_";
-        }
-    }
-    return @result == 1 ? $result[0] : \@result;
-}
-
-sub is_required {
-    my $err_msg = shift || 'Required';
-    return sub { defined $_[0] && $_[0] ne '' ? undef : $err_msg  }
-}
-
-sub is_required_if {
-    my ( $condition, $err_msg ) = @_;
-    $condition = 0 unless defined $condition;
-    $err_msg ||= 'Required';
-    if ( ref($condition) && ref($condition) ne 'CODE' ) {
-        croak "is_required_if condition must be CODE or SCALAR";
-    }
-    return sub {
-        my ( $value, $params ) = @_;
-        my $required =
-          ref($condition) eq 'CODE'
-          ? $condition->($params)
-          : $condition;
-        return unless $required;
-        return defined $value && $value ne '' ? undef : $err_msg;
-    };
-}
-
-sub is_equal {
-    my ( $other, $err_msg ) = @_;
-    $err_msg ||= 'Invalid value';
-    return sub {
-        return undef if !defined($_[0]) || $_[0] eq '';
-        return defined $_[1]->{$other} && $_[0] eq $_[1]->{$other}
-          ? undef
-          : $err_msg;
-    };
-}
-
-sub is_long_between {
-    my ( $min, $max, $err_msg ) = @_;
-    $err_msg ||= "Must be between $min and $max symbols";
-    return sub {
-        return undef if !defined($_[0]) || $_[0] eq '';
-        length( $_[0] ) >= $min && length( $_[0] ) <= $max
-          ? undef
-          : $err_msg;
-    };
-}
-
-sub is_long_at_least {
-    my ( $length, $err_msg ) = @_;
-    $err_msg ||= "Must be at least $length symbols";
-    return sub {
-        return undef if !defined($_[0]) || $_[0] eq '';
-        length( $_[0] ) >= $length ? undef : $err_msg;
-    };
-}
-
-sub is_long_at_most {
-    my ( $length, $err_msg ) = @_;
-    $err_msg ||= "Must be at the most $length symbols";
-    return sub {
-        return undef if !defined($_[0]) || $_[0] eq '';
-        length( $_[0] ) <= $length ? undef : $err_msg;
-    };
-}
-
-sub is_a {
-    my ( $class, $err_msg ) = @_;
-    $err_msg ||= "Invalid value";
-    return sub {
-        return undef if !defined($_[0]) || $_[0] eq '';
-        ref($_[0]) eq $class ? undef : $err_msg;
-    }
-}
-
-sub is_like {
-    my ( $regexp, $err_msg ) = @_;
-    $err_msg ||= "Invalid value";
-    croak 'Regexp expected' unless ref($regexp) eq 'Regexp';
-    return sub {
-        return undef if !defined($_[0]) || $_[0] eq '';
-        $_[0] =~ $regexp ? undef : $err_msg;
-    };
-}
-
-sub is_in {
-    my ( $arrayref, $err_msg ) = @_;
-    $err_msg ||= "Invalid value";
-    croak 'ArrayRef expected' unless ref($arrayref) eq 'ARRAY';
-    return sub {
-        return undef if !defined($_[0]) || $_[0] eq '';
-        _match( $_[0], $arrayref ) ? undef : $err_msg;
-      }
-}
-
-sub new {
-    my ( $class, $input, $rules ) = @_;
-    if ( ref $input ne 'HASH' || ref $rules ne 'HASH' ) {
-        confess("Parameters and rules HASH refs are needed");
-    }
-    bless {
-        input  => $input,
-        rules  => $rules,
-        result => validate( $input, $rules )
-    }, $class;
-}
-
-sub error_string {
-    my ( $self, %args ) = @_;
-    return "" if $self->success;
-
-    $args{separator} = defined $args{separator} ? $args{separator} : ';';
-    $args{names} = defined $args{names} ? $args{names} : {};
-    $args{template} = defined $args{template} ? $args{template} : '[%s] %s';
-
-    if ( ref($args{names}) ne 'HASH' ) {
-        croak("names must be a reference to a HASH");
-    }
-
-    my @errors = map {
-        sprintf( $args{template}, ($args{names}->{$_} || $_), $self->error($_) )
-    } keys %{$self->error};
-
-    return $args{single}
-        ? shift @errors
-        : join( $args{separator}, @errors );
-}
-
-sub AUTOLOAD {
-    my $self = shift;
-    our $AUTOLOAD;
-    my $sub = $AUTOLOAD =~ /::(\w+)$/ ? $1 : undef;
-    if ( $sub =~ /(params|rules)/ ) {
-        return $self->{$sub};
-    }
-    elsif ( $sub =~ /(data|error)/ ) {
-        if ( my $field = shift ) {
-            my $fields = $self->{rules}->{fields};
-            if ( scalar(@$fields) ) {
-                croak("Undefined field $sub($field)")
-                  unless _match( $field, $fields );
-            }
-            return $self->{result}->{$sub}->{ $field };
-        }
-        else {
-            return {%{$self->{result}->{$sub}}};
-        }
-    }
-    elsif ( $sub eq 'success' ) {
-        return $self->{result}->{success}
-    }
-    elsif ( $sub eq 'to_hash' ) {
-        return {%{$self->{result}}}
-    }
-    else {
-        confess "Undefined method $AUTOLOAD";
-    }
-}
-
-sub DESTROY {}
-
-1;
-
-__END__
-
-=pod
-
-=head1 NAME
+# NAME
 
 Validate::Tiny - Minimalistic data validation
 
-=head1 VERSION
+# VERSION
 
 Version 0.984
 
-=head1 SYNOPSIS
+# SYNOPSIS
 
 Filter and validate user input from forms, etc.
 
@@ -388,7 +71,6 @@ Filter and validate user input from forms, etc.
         ...
     }
 
-
 Or if you prefer an OOP approach:
 
     use Validate::Tiny;
@@ -406,7 +88,7 @@ Or if you prefer an OOP approach:
         my $email_error = $result->error('email');
     }
 
-=head1 DESCRIPTION
+# DESCRIPTION
 
 This module provides a simple, light and minimalistic way of validating user
 input. Except perl core modules and some test modules it has no other
@@ -415,51 +97,39 @@ filters such as email and credit card matching. The basic idea of this
 module is to provide the validation functionality, and leave it up to the
 user to write their own data filters and checks. If you need a complete
 data validation solution that comes with many ready features, I recommend
-you to take a look at L<Data::FormValidator>. If your validation logic is
+you to take a look at [Data::FormValidator](https://metacpan.org/pod/Data::FormValidator). If your validation logic is
 not too complicated or your form is relatively short, this module is a
 decent candidate for your project.
 
-=head1 LOGIC
+# LOGIC
 
 The basic principle of data/form validation is that any user input must be
 sanitized and checked for errors before used in the logic of the program.
 Validate::Tiny breaks this process in three steps:
 
-=over
-
-=item 1
-
-Specify the fields you want to work with via L</fields>.
+1. Specify the fields you want to work with via ["fields"](#fields).
 All others will be disregarded.
-
-=item 2
-
-Filter the fields' values using L</filters>. A filter
+2. Filter the fields' values using ["filters"](#filters). A filter
 can be as simple as changing to lower case or removing excess white space,
 or very complicated such as parsing and removing HTML tags.
-
-=item 3
-
-Perform a series of L</checks> on the filtered values, to make sure
+3. Perform a series of ["checks"](#checks) on the filtered values, to make sure
 they match the requirements. Again, the checks can be very simple as in
 checking if the value was defined, or very complicated as in checking if
 the value is a valid credit card number.
 
-=back
-
-The validation returns a hash ref which contains C<success> => 1|0,
-C<data> and C<error> hashes. If success is 1, C<data> will contain the
-filtered values, otherwise C<error> will contain the error messages for
+The validation returns a hash ref which contains `success` => 1|0,
+`data` and `error` hashes. If success is 1, `data` will contain the
+filtered values, otherwise `error` will contain the error messages for
 each field.
 
-=head1 EXPORT
+# EXPORT
 
 This module does not automatically export anything. You can optionally
 request any of the below subroutines or use ':all' to export all.
 
-=head1 PROCEDURAL INTERFACE
+# PROCEDURAL INTERFACE
 
-=head2 validate
+## validate
 
     use Validate::Tiny qw/validate/;
 
@@ -468,7 +138,7 @@ request any of the below subroutines or use ':all' to export all.
 Validates user input against a set of rules. The input is expected to be
 a reference to a hash.
 
-=head3 %rules
+### %rules
 
     my %rules = (
         fields  => \@field_names,
@@ -476,14 +146,14 @@ a reference to a hash.
         checks  => \@checks_array
     );
 
-C<rules> is a hash containing references to the following three
-arrays: L</fields>, L</filters> and L</checks>.
+`rules` is a hash containing references to the following three
+arrays: ["fields"](#fields), ["filters"](#filters) and ["checks"](#checks).
 
-=head4 fields
+#### fields
 
 An array containing the names of the fields that must be filtered,
 checked and returned. All others will be disregarded. As of version
-0.981 you can use an empty array for C<fields>, which will work on
+0.981 you can use an empty array for `fields`, which will work on
 all input fields.
 
     my @field_names = qw/username email password password2/;
@@ -492,11 +162,11 @@ or
 
     my @field_names = ();   # Use all input fields
 
-=head4 filters
+#### filters
 
 An array containing name matches and filter subs. The array must have
-an even number of elements. Each I<odd> element is a field name match and
-each I<even> element is a reference to a filter subroutine or a chain of
+an even number of elements. Each _odd_ element is a field name match and
+each _even_ element is a reference to a filter subroutine or a chain of
 filter subroutines. A filter subroutine takes one parameter - the value
 to be filtered, and returns the modified value.
 
@@ -529,7 +199,7 @@ to provide a chain of filters:
 The above example will first lowercase the value then uppercase its first
 letter.
 
-Some simple text filters are provided by the L</filter()> subroutine.
+Some simple text filters are provided by the ["filter()"](#filter) subroutine.
 
     use Validate::Tiny qw/validate :util/;
 
@@ -537,18 +207,18 @@ Some simple text filters are provided by the L</filter()> subroutine.
         name => filter(qw/strip trim lc/)
     );
 
-=head4 checks
+#### checks
 
 An array ref containing name matches and check subs. The array must have
-an even number of elements. Each I<odd> element is a field name match and
-each I<even> element is a reference to a check subroutine or a chain of
+an even number of elements. Each _odd_ element is a field name match and
+each _even_ element is a reference to a check subroutine or a chain of
 check subroutines.
 
 A check subroutine takes three parameters - the value to be checked, a
 reference to the filtered input hash and a scalar with the name of the
 checked field.
 
-B<Example:>
+**Example:**
 
     checks => [
         does_exist => sub {
@@ -561,7 +231,7 @@ B<Example:>
 A check subroutine must return undef if the check passes or a string with
 an error message if the check fails.
 
-B<Example:>
+**Example:**
 
     # Make sure the password is good
     sub is_good_password {
@@ -598,9 +268,9 @@ It may be a bit counter-intuitive for some people to return undef when the
 check passes and a string when it fails. If you have a huge problem with
 this concept, then this module may not be right for you.
 
-B<Important!> Notice that in the beginning of C<is_good_password> we check
-if C<$value> is defined and return undef if it is not. This is because it
-is not the job of C<is_good_password> to check if C<password> is required.
+**Important!** Notice that in the beginning of `is_good_password` we check
+if `$value` is defined and return undef if it is not. This is because it
+is not the job of `is_good_password` to check if `password` is required.
 Its job is to determine if the password is good. Consider the following
 example:
 
@@ -626,23 +296,23 @@ and this one too:
         ]
     };
 
-The above examples show how we make sure that C<password> is defined
+The above examples show how we make sure that `password` is defined
 and not empty before we check if it is a good password.
-Of course we can check if C<password> is defined inside C<is_good_password>,
-but it would be redundant. Also, this approach will fail if C<password> is
+Of course we can check if `password` is defined inside `is_good_password`,
+but it would be redundant. Also, this approach will fail if `password` is
 not required, but must pass the rules for a good password if provided.
 
-=head4 Chaining
+#### Chaining
 
 The above example also shows that chaining check subroutines
 is available in the same fashion as chaining filter subroutines.
 The difference between chaining filters and chaining checks is that
-a chain of filters will always run B<all> filters, and a chain of checks
+a chain of filters will always run **all** filters, and a chain of checks
 will exit after the first failed check and return its error message.
-This way the C<$result-E<gt>{error}> hash always has a single error message
+This way the `$result->{error}` hash always has a single error message
 per field.
 
-=head4 Using closures
+#### Using closures
 
 When writing reusable check subroutines, sometimes you will want to
 be able to pass arguments. Returning closures (anonymous subs) is the
@@ -665,10 +335,9 @@ recommended approach:
         ]
     };
 
+### Return value
 
-=head3 Return value
-
-C<validate> returns a hash ref with three elements:
+`validate` returns a hash ref with three elements:
 
     my $result = validate(\%input, \%rules);
 
@@ -679,12 +348,12 @@ C<validate> returns a hash ref with three elements:
         error   => \%error
     };
 
-If C<success> is 1 all of the filtered input will be in C<%data>,
-otherwise the error messages will be stored in C<%error>. If C<success>
-is 0, C<%data> may or may not contain values, but its use is not
+If `success` is 1 all of the filtered input will be in `%data`,
+otherwise the error messages will be stored in `%error`. If `success`
+is 0, `%data` may or may not contain values, but its use is not
 recommended.
 
-=head2 filter
+## filter
 
     filter( $name1, $name2, ... );
 
@@ -707,41 +376,41 @@ is equivalent to this:
 
 It provides a shortcut for the following filters:
 
-=head3 trim
+### trim
 
 Removes leading and trailing white space.
 
-=head3 strip
+### strip
 
 Shrinks two or more white spaces to one.
 
-=head3 lc
+### lc
 
 Lower case.
 
-=head3 uc
+### uc
 
 Upper case.
 
-=head3 ucfirst
+### ucfirst
 
 Upper case first letter
 
-=head2 is_required
+## is\_required
 
     is_required( $opt_error_msg );
 
-C<is_required> provides a shortcut to an anonymous subroutine that checks
+`is_required` provides a shortcut to an anonymous subroutine that checks
 if the matched field is defined and it is not an empty string. Optionally,
 you can provide a custom error message to be returned.
 
-=head2 is_required_if
+## is\_required\_if
 
     is_required_if( $condition, $err_msg );
 
 Require a field conditionally. The condition can be either a scalar or a
 code reference that returns true/false value. If the condition is a code
-reference, it will be passed the C<$params> hash with all filtered fields.
+reference, it will be passed the `$params` hash with all filtered fields.
 
 Example:
 
@@ -772,11 +441,11 @@ Second example:
         ]
     };
 
-=head2 is_equal
+## is\_equal
 
     is_equal( $other_field_name, $opt_error_msg )
 
-C<is_equal> checks if the value of the matched field is the same as the
+`is_equal` checks if the value of the matched field is the same as the
 value of another field within the input hash. Example:
 
     my $rules = {
@@ -785,7 +454,7 @@ value of another field within the input hash. Example:
         ]
     };
 
-=head2 is_long_between
+## is\_long\_between
 
     my $rules = {
         checks => [
@@ -793,10 +462,10 @@ value of another field within the input hash. Example:
         ]
     };
 
-Checks if the length of the value is >= C<$min> and <= C<$max>. Optionally you
-can provide a custom error message. The default is I<Invalid value>.
+Checks if the length of the value is >= `$min` and <= `$max`. Optionally you
+can provide a custom error message. The default is _Invalid value_.
 
-=head2 is_long_at_least
+## is\_long\_at\_least
 
     my $rules = {
         checks => [
@@ -804,10 +473,10 @@ can provide a custom error message. The default is I<Invalid value>.
         ]
     };
 
-Checks if the length of the value is >= C<$length>. Optionally you can
-provide a custom error message. The default is I<Must be at least %i symbols>.
+Checks if the length of the value is >= `$length`. Optionally you can
+provide a custom error message. The default is _Must be at least %i symbols_.
 
-=head2 is_long_at_most
+## is\_long\_at\_most
 
     my $rules = {
         checks => [
@@ -815,11 +484,11 @@ provide a custom error message. The default is I<Must be at least %i symbols>.
         ]
     };
 
-Checks if the length of the value is <= C<$length>. Optionally you can
+Checks if the length of the value is <= `$length`. Optionally you can
 provide a custom error message. The default is
-I<Must be at the most %i symbols>.
+_Must be at the most %i symbols_.
 
-=head2 is_a
+## is\_a
 
     use DateTime::Format::Natural;
     use Try::Tiny;
@@ -848,9 +517,9 @@ I<Must be at the most %i symbols>.
 Checks if the value is an instance of a class. This can be particularly useful,
 when you need to parse dates or other user input that needs to get converted to
 an object. Since the filters get executed before checks, you can use them to
-instantiate the data, then use C<is_a> to check if you got a successful object.
+instantiate the data, then use `is_a` to check if you got a successful object.
 
-=head2 is_like
+## is\_like
 
     my $rules = {
         checks => [
@@ -861,7 +530,7 @@ instantiate the data, then use C<is_a> to check if you got a successful object.
 Checks if the value matches a regular expression. Optionally you can provide a
 custom error message.
 
-=head2 is_in
+## is\_in
 
     my @cities = qw/Alchevsk Kiev Odessa/;
     my $rules = {
@@ -873,9 +542,9 @@ custom error message.
 Checks if the value matches a set of values. Optionally you can provide a
 custom error message.
 
-=head1 OBJECT INTERFACE
+# OBJECT INTERFACE
 
-=head2 new
+## new
 
 Validates the input against the rules and returns a class instance.
 
@@ -895,11 +564,11 @@ Validates the input against the rules and returns a class instance.
         $result->error('name');
     }
 
-=head2 success
+## success
 
 Returns a true value if the input passed all the rules.
 
-=head2 data
+## data
 
 Returns a hash reference to all filtered fields. If called with a parameter,
 it will return the value of that field or croak if there is no such field defined
@@ -908,7 +577,7 @@ in the fields array.
     my $all_fields = $result->data;
     my $email      = $result->data('email');
 
-=head2 error
+## error
 
 Returns a hash reference to all error messages. If called with a parameter,
 it will return the error message of that field, or croak if there is no such
@@ -917,7 +586,7 @@ field.
     my $errors = $result->error;
     my $email = $result->error('email');
 
-=head2 error_string
+## error\_string
 
 Returns a string with all errors. Sometimes you may want to display all errors
 together in a string. This function makes that easy.
@@ -935,11 +604,11 @@ together in a string. This function makes that easy.
     # An example output for the above would be:
     # "First name is required<br>Last name is required"
 
-C<error_string> takes the following optional parameters:
+`error_string` takes the following optional parameters:
 
-=head3 template
+### template
 
-A string for the C<sprintf> function. It has to have two %s's in it:
+A string for the `sprintf` function. It has to have two %s's in it:
 one for the field name and one for the error message.
 
     my $str = $result->error_string(
@@ -948,17 +617,17 @@ one for the field name and one for the error message.
 
     # Result: "(field_name):Error message"
 
-The default value is C<[%s] %s>.
+The default value is `[%s] %s`.
 
-=head3 separator
+### separator
 
 A character or a string which will be used to join all error messages.
-The default value is C<";">.
+The default value is `";"`.
 
-=head3 names
+### names
 
-A HASH reference, which contains field_name => "Field description"
-values, so instead of C<field_name> your users will see a meaningful description
+A HASH reference, which contains field\_name => "Field description"
+values, so instead of `field_name` your users will see a meaningful description
 for the field.
 
     my $str = $result->error_string(
@@ -972,32 +641,32 @@ for the field.
     # Result: "Password verification does not match."
 
 If a field description is not defined then the field name will be used.
-The default value for C<names> is an empty hash.
+The default value for `names` is an empty hash.
 
-=head3 single
+### single
 
-If this is non-zero, the result will contain the error message only for B<one> of the fields.
+If this is non-zero, the result will contain the error message only for **one** of the fields.
 This can be useful when you want to display a single error at a time. The value of
-C<separator> in this case is disregarded.
-Default value C<0>.
+`separator` in this case is disregarded.
+Default value `0`.
 
-=head2 to_hash
+## to\_hash
 
 Return a result hash, much like using the procedural interface. See the output
-of L</validate> for more information.
+of ["validate"](#validate) for more information.
 
-=head1 I18N
+# I18N
 
 A check function is considered failing if it returns a value. In the
 above examples we showed you how to return error strings. If you want to
 internationalize your errors, you can make your check closures return
-L<Locale::Maketext> functions, or any other i18n values.
+[Locale::Maketext](https://metacpan.org/pod/Locale::Maketext) functions, or any other i18n values.
 
-=head1 SEE ALSO
+# SEE ALSO
 
-L<Data::FormValidator>
+[Data::FormValidator](https://metacpan.org/pod/Data::FormValidator)
 
-=head1 BUGS
+# BUGS
 
 Bug reports and patches are welcome. Reports which include a failing
 Test::More style test are helpful and will receive priority.
@@ -1005,20 +674,17 @@ Test::More style test are helpful and will receive priority.
 You may also fork the module on Github:
 https://github.com/naturalist/Validate--Tiny
 
-=head1 AUTHOR
+# AUTHOR
 
     miniml (cpan: MINIMAL) - minimal@cpan.org
 
-=head1 CONTRIBUTORS
+# CONTRIBUTORS
 
     Patrice Clement (cpan: MONSIEUR) - monsieurp@gentoo.org
     Viktor Turskyi (cpan: KOORCHIK) - koorchik@cpan.org
     Ivan Simonik (cpan: SIMONIKI) - simoniki@cpan.org
 
-=head1 LICENCE
+# LICENCE
 
 This program is free software; you can redistribute it and/or modify
 it under the terms as perl itself.
-
-=cut
-

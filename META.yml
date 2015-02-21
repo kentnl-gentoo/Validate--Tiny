@@ -7,7 +7,7 @@ build_requires:
 configure_requires:
   ExtUtils::MakeMaker: '6.30'
 dynamic_config: 0
-generated_by: 'Dist::Zilla version 5.013, CPAN::Meta::Converter version 2.133380'
+generated_by: 'Dist::Zilla version 5.019, CPAN::Meta::Converter version 2.143240'
 license: perl
 meta-spec:
   url: http://module-build.sourceforge.net/META-spec-v1.4.html
@@ -15,10 +15,11 @@ meta-spec:
 name: Validate-Tiny
 requires:
   Carp: '0'
+  Exporter: '0'
   List::MoreUtils: '0'
   strict: '0'
   warnings: '0'
 resources:
   homepage: https://github.com/naturalist/Validate--Tiny
   repository: https://github.com/naturalist/Validate--Tiny.git
-version: '1.005'
+version: '1.015'
