@@ -22,4 +22,4 @@ requires:
 resources:
   homepage: https://github.com/naturalist/Validate--Tiny
   repository: https://github.com/naturalist/Validate--Tiny.git
-version: '1.501'
+version: '1.551'
